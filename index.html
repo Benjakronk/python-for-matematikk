@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Python for 10. trinn — Innføring</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg" />
+<link rel="stylesheet" href="style.css" />
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">{ }</span>
+    <div>
+      <div class="brand-title">Python for 10. trinn</div>
+      <div class="brand-sub">Print · Variabler · Løkker · Algoritmer — eksamensrettet for 10. trinn</div>
+    </div>
+  </div>
+  <div class="progress-wrap">
+    <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+    <span id="progressText" class="progress-text">0 / 6</span>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <ol id="lessonList" class="lesson-list"></ol>
+  </nav>
+
+  <main id="content" class="content"></main>
+
+  <aside class="terminal-panel">
+    <div class="terminal-header">
+      <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+      <span class="terminal-title">Python-terminal</span>
+      <div class="font-controls" title="Skriftstørrelse">
+        <button id="fontDown" class="font-btn" title="Mindre tekst">A−</button>
+        <button id="fontUp" class="font-btn" title="Større tekst">A+</button>
+      </div>
+      <button id="runBtn" class="run-btn" disabled>Kjør ▶</button>
+      <button id="resetBtn" class="reset-btn" title="Tøm kode">Tøm</button>
+    </div>
+    <textarea id="code" class="code-area" spellcheck="false" placeholder="# Skriv Python-kode her ..."></textarea>
+    <div class="terminal-output-label">Utskrift:</div>
+    <pre id="output" class="output">Laster Python ...</pre>
+  </aside>
+</div>
+
+<script src="lessons.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
