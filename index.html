@@ -47,6 +47,20 @@
   </aside>
 </div>
 
+<!-- In-app input-dialog -->
+<div id="inputModal" class="input-modal" aria-hidden="true">
+  <div class="input-modal-backdrop"></div>
+  <form id="inputForm" class="input-modal-box" autocomplete="off">
+    <div class="input-modal-title">Inntasting</div>
+    <div id="inputPromptText" class="input-modal-prompt"></div>
+    <input id="inputField" class="input-modal-field" type="text" />
+    <div class="input-modal-actions">
+      <button type="button" id="inputCancel" class="btn">Avbryt</button>
+      <button type="submit" id="inputOk" class="btn btn-primary">OK</button>
+    </div>
+  </form>
+</div>
+
 <script src="lessons.js"></script>
 <script src="app.js"></script>
 </body>

@@ -42,18 +42,158 @@ async function initPyodide() {
   }
 }
 
+/* ---------- In-app input-dialog ---------- */
+const inputModal = document.getElementById("inputModal");
+const inputForm = document.getElementById("inputForm");
+const inputField = document.getElementById("inputField");
+const inputPromptText = document.getElementById("inputPromptText");
+const inputCancel = document.getElementById("inputCancel");
+
+let _pendingInput = null; // { resolve, reject }
+
+function showInputDialog(promptText) {
+  return new Promise((resolve, reject) => {
+    _pendingInput = { resolve, reject };
+    inputPromptText.textContent = promptText || "(skriv et svar)";
+    inputField.value = "";
+    inputModal.classList.add("show");
+    inputModal.setAttribute("aria-hidden", "false");
+    // Vent litt så modal får lagt seg før vi fokuserer
+    setTimeout(() => inputField.focus(), 0);
+  });
+}
+function closeInputDialog() {
+  inputModal.classList.remove("show");
+  inputModal.setAttribute("aria-hidden", "true");
+  _pendingInput = null;
+}
+inputForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (!_pendingInput) return;
+  const value = inputField.value;
+  const { resolve } = _pendingInput;
+  closeInputDialog();
+  resolve(value);
+});
+inputCancel.addEventListener("click", () => {
+  if (!_pendingInput) return;
+  const { reject } = _pendingInput;
+  closeInputDialog();
+  reject(new Error("Inntasting avbrutt"));
+});
+inputField.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    inputCancel.click();
+  }
+});
+
 async function runCode(code) {
   if (!state.pyReady) return { output: "", error: "Python er ikke klar enda." };
-  // Capture stdout via Pyodide
+  // Eksponer dialog-funksjonen til Python
+  state.pyodide.globals.set("_js_show_input", showInputDialog);
+
+  // Sett opp stdout-capture og en async input()-erstatning.
+  // Vi transformerer brukerkoden med Pythons ast slik at input(...) blir
+  // await _ainput(...), og alle funksjoner definert av brukeren blir async
+  // (og deres kall blir await). Hele brukerkoden pakkes inn i en async
+  // wrapper og kjøres med top-level await via runPythonAsync.
   state.pyodide.runPython(`
-import sys, io
+import sys, io, builtins, ast, textwrap
+
 _stdout = io.StringIO()
 sys.stdout = _stdout
 sys.stderr = _stdout
+
+async def _ainput(prompt=""):
+    text = str(prompt)
+    if text:
+        print(text, end="", flush=True)
+    answer = await _js_show_input(text)
+    answer = str(answer)
+    print(answer)
+    return answer
+
+# Hvis input() kalles utenom vår transformerte kode (f.eks. fra importert modul),
+# kast en tydelig feil i stedet for OSError fra Pyodide.
+def _sync_input_blocked(prompt=""):
+    raise RuntimeError("input() kan ikke brukes her — bruk den direkte i koden din.")
+builtins.input = _sync_input_blocked
+
+
+def _transform_user_code(src: str) -> str:
+    tree = ast.parse(src)
+
+    # Finn navn på alle brukerdefinerte funksjoner (på toppnivå og nested)
+    user_funcs = set()
+    class _Collect(ast.NodeVisitor):
+        def visit_FunctionDef(self, node):
+            user_funcs.add(node.name)
+            self.generic_visit(node)
+        def visit_AsyncFunctionDef(self, node):
+            user_funcs.add(node.name)
+            self.generic_visit(node)
+    _Collect().visit(tree)
+
+    class _Rewrite(ast.NodeTransformer):
+        def visit_FunctionDef(self, node):
+            self.generic_visit(node)
+            new = ast.AsyncFunctionDef(
+                name=node.name,
+                args=node.args,
+                body=node.body,
+                decorator_list=node.decorator_list,
+                returns=node.returns,
+                type_comment=node.type_comment,
+            )
+            return ast.copy_location(new, node)
+
+        def visit_Call(self, node):
+            self.generic_visit(node)
+            f = node.func
+            if isinstance(f, ast.Name):
+                if f.id == "input":
+                    new_call = ast.Call(
+                        func=ast.Name(id="_ainput", ctx=ast.Load()),
+                        args=node.args,
+                        keywords=node.keywords,
+                    )
+                    ast.copy_location(new_call, node)
+                    aw = ast.Await(value=new_call)
+                    return ast.copy_location(aw, node)
+                if f.id in user_funcs:
+                    aw = ast.Await(value=node)
+                    return ast.copy_location(aw, node)
+            return node
+
+    new_tree = _Rewrite().visit(tree)
+    ast.fix_missing_locations(new_tree)
+
+    body_src = ast.unparse(new_tree)
+    indented = textwrap.indent(body_src, "    ")
+    wrapper = "async def __user_main():\\n" + (indented if indented.strip() else "    pass\\n")
+    return wrapper + "\\nawait __user_main()\\n"
+
+builtins._transform_user_code = _transform_user_code
 `);
+
   let error = null;
+  let transformed = null;
   try {
-    await state.pyodide.runPythonAsync(code);
+    state.pyodide.globals.set("_user_src", code);
+    transformed = state.pyodide.runPython("_transform_user_code(_user_src)");
+  } catch (err) {
+    // Hvis transformasjonen feiler (f.eks. syntaksfeil), kjør koden direkte
+    // så Python selv gir riktig feilmelding til eleven.
+    transformed = null;
+  }
+
+  try {
+    if (transformed) {
+      await state.pyodide.runPythonAsync(transformed);
+    } else {
+      await state.pyodide.runPythonAsync(code);
+    }
   } catch (err) {
     error = String(err);
   }
